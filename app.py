@@ -130,4 +130,4 @@ if uploaded:
             st.error(str(exc))
             st.exception(exc)
 else:
-    st.info("Upload a DOCX like the Conciliación Bancaria procedure.")
+    st.info("Upload a DOCX with the same format as Conciliación Bancaria procedure.")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dotenv import load_dotenv
-
+import re
 
 import json
 import os
@@ -73,88 +73,234 @@ def workflow_from_rows_with_ai(title: str, rows: list[dict[str, str]], model: st
 
 def workflow_from_rows_rule_based(title: str, rows: list[dict[str, str]]) -> dict[str, Any]:
     """
-    Fallback parser for tables like the sample procedure.
-    Good enough for first tests; AI mode is better for messy docs.
+    Rule-based parser for procedure tables.
+
+    Handles:
+    - regular sequential activities
+    - decision rows like:
+        Si: Ir a la actividad 5.1. No: Ir a la actividad 7.
+    - decimal activity numbers: 3.1, 5.1, 7.2
+    - loopbacks:
+        regresa a actividad 5
+        luego regresa a la actividad 3
     """
+
+    def clean_no(no: str) -> str:
+        return no.strip().strip(".").replace(",", ".")
+
     def activity_id(no: str, is_gateway: bool = False) -> str:
-        clean = re.sub(r"[^0-9A-Za-z_]+", "_", no.strip().strip(".")).strip("_")
+        clean = clean_no(no)
+        clean = re.sub(r"[^0-9A-Za-z_]+", "_", clean).strip("_")
         return ("G" if is_gateway else "A") + clean
 
+    def normalize_lane(value: str) -> str:
+        return (value or "").strip().rstrip(".")
+
+    def is_decision_row(activity: str, description: str) -> bool:
+        text = f"{activity} {description}".lower()
+        return (
+            activity.strip().startswith("¿")
+            or "si:" in text
+            or "sí:" in text
+            or "no:" in text
+            or "existe" in text and "?" in activity
+        )
+
+    def extract_decision_targets(description: str) -> list[dict[str, str]]:
+        """
+        Extracts:
+            Si: Ir a la actividad 5.1.
+            No: Ir a la actividad 7.
+
+        Returns:
+            [{"label": "Sí", "target_no": "5.1"}, {"label": "No", "target_no": "7"}]
+        """
+
+        desc = " ".join((description or "").replace("\n", " ").split())
+
+        # Normalize common OCR/typing variations
+        desc = desc.replace("Sí:", "Si:")
+        desc = desc.replace("SI:", "Si:")
+        desc = desc.replace("NO:", "No:")
+
+        pattern = re.compile(
+            r"\b(Si|No)\s*:\s*"
+            r"(?:Ir|Dirigirse|Continuar|Continúa|Continua|Pasar|Pasa)?\s*"
+            r"(?:a\s*)?"
+            r"(?:la\s*)?"
+            r"(?:actividad|act\.?)\s*"
+            r"([0-9]+(?:\.[0-9]+)*)",
+            flags=re.IGNORECASE,
+        )
+
+        targets = []
+
+        for match in pattern.finditer(desc):
+            raw_label = match.group(1).lower()
+            target_no = clean_no(match.group(2))
+
+            label = "Sí" if raw_label == "si" else "No"
+
+            targets.append({
+                "label": label,
+                "target_no": target_no,
+            })
+
+        return targets
+
+    def extract_loop_target(description: str) -> str | None:
+        desc = " ".join((description or "").replace("\n", " ").split())
+
+        pattern = re.compile(
+            r"(?:regresa|retorna|vuelve|volver|se devuelve)\s*"
+            r"(?:a\s*)?"
+            r"(?:la\s*)?"
+            r"(?:actividad|act\.?)\s*"
+            r"([0-9]+(?:\.[0-9]+)*)",
+            flags=re.IGNORECASE,
+        )
+
+        match = pattern.search(desc)
+
+        if match:
+            return clean_no(match.group(1))
+
+        return None
+
+    # ----------------------------------------
+    # Lanes
+    # ----------------------------------------
     lanes = []
-    for r in rows:
-        lane = r["responsable"].strip().rstrip(".")
+
+    for row in rows:
+        lane = normalize_lane(row.get("responsable", ""))
+
         if lane and lane not in lanes:
             lanes.append(lane)
 
     if not lanes:
         lanes = ["Responsable"]
 
-    nodes = [{"id": "START", "type": "start", "lane": lanes[0], "name": "Inicio"}]
+    # ----------------------------------------
+    # Nodes
+    # ----------------------------------------
+    nodes = [
+        {
+            "id": "START",
+            "type": "start",
+            "lane": lanes[0],
+            "name": "Inicio",
+        }
+    ]
 
     no_to_id = {}
-    for r in rows:
-        no = r["no"].strip().strip(".")
-        name = r["actividad"].strip()
-        desc = r["descripcion"].strip()
-        lane = r["responsable"].strip().rstrip(".") or lanes[0]
-        is_gateway = name.startswith("¿") or "Si:" in desc or "Sí:" in desc or "No:" in desc
-        nid = activity_id(no, is_gateway)
-        no_to_id[no] = nid
-        nodes.append({
-            "id": nid,
-            "type": "exclusiveGateway" if is_gateway else "task",
-            "lane": lane,
-            "name": name,
-        })
+    ordered_numbers = []
 
-    last_lane = rows[-1]["responsable"].strip().rstrip(".") or lanes[-1]
-    nodes.append({"id": "END", "type": "end", "lane": last_lane, "name": "Fin"})
+    for row in rows:
+        no = clean_no(row.get("no", ""))
+        activity = (row.get("actividad", "") or "").strip()
+        description = (row.get("descripcion", "") or "").strip()
+        lane = normalize_lane(row.get("responsable", "")) or lanes[0]
 
-    flows = []
-    ordered_ids = [no_to_id[r["no"].strip().strip(".")] for r in rows]
-
-    flows.append({"source": "START", "target": ordered_ids[0]})
-
-    explicit_sources = set()
-
-    for idx, r in enumerate(rows):
-        no = r["no"].strip().strip(".")
-        src = no_to_id[no]
-        desc = r["descripcion"]
-
-        targets = re.findall(r"(Si|Sí|No)\s*:\s*Ir a actividad\s*([0-9]+(?:\.[0-9]+)?)", desc, flags=re.I)
-        if targets:
-            explicit_sources.add(src)
-            for label, target_no in targets:
-                target_no = target_no.strip().strip(".")
-                if target_no in no_to_id:
-                    flows.append({
-                        "source": src,
-                        "target": no_to_id[target_no],
-                        "name": "Sí" if label.lower() in ["si", "sí"] else "No"
-                    })
+        if not no or not activity:
             continue
 
-        loop = re.search(r"regresa a actividad\s*([0-9]+(?:\.[0-9]+)?)", desc, flags=re.I)
-        if loop:
-            target_no = loop.group(1).strip().strip(".")
-            if target_no in no_to_id:
-                flows.append({"source": src, "target": no_to_id[target_no]})
+        is_gateway = is_decision_row(activity, description)
+        node_id = activity_id(no, is_gateway=is_gateway)
 
-        # normal sequential connection unless next edge comes from explicit gateway logic
-        if idx + 1 < len(ordered_ids):
-            if src not in explicit_sources:
-                flows.append({"source": src, "target": ordered_ids[idx + 1]})
+        no_to_id[no] = node_id
+        ordered_numbers.append(no)
+
+        nodes.append({
+            "id": node_id,
+            "type": "exclusiveGateway" if is_gateway else "task",
+            "lane": lane,
+            "name": activity,
+        })
+
+    last_lane = normalize_lane(rows[-1].get("responsable", "")) or lanes[-1]
+
+    nodes.append({
+        "id": "END",
+        "type": "end",
+        "lane": last_lane,
+        "name": "Fin",
+    })
+
+    # ----------------------------------------
+    # Flows
+    # ----------------------------------------
+    flows = []
+
+    if ordered_numbers:
+        flows.append({
+            "source": "START",
+            "target": no_to_id[ordered_numbers[0]],
+        })
+
+    for idx, row in enumerate(rows):
+        no = clean_no(row.get("no", ""))
+        description = row.get("descripcion", "") or ""
+
+        if no not in no_to_id:
+            continue
+
+        source_id = no_to_id[no]
+
+        decision_targets = extract_decision_targets(description)
+
+        if decision_targets:
+            # Decision rows should connect DIRECTLY to both branches.
+            for target in decision_targets:
+                target_no = target["target_no"]
+
+                if target_no in no_to_id:
+                    flows.append({
+                        "source": source_id,
+                        "target": no_to_id[target_no],
+                        "name": target["label"],
+                    })
+
+            # Important:
+            # Do NOT also add normal sequential flow from a gateway.
+            continue
+
+        loop_target_no = extract_loop_target(description)
+
+        if loop_target_no and loop_target_no in no_to_id:
+            flows.append({
+                "source": source_id,
+                "target": no_to_id[loop_target_no],
+            })
+
+        # Normal sequential flow
+        if idx + 1 < len(ordered_numbers):
+            next_no = ordered_numbers[idx + 1]
+            flows.append({
+                "source": source_id,
+                "target": no_to_id[next_no],
+            })
         else:
-            flows.append({"source": src, "target": "END"})
+            flows.append({
+                "source": source_id,
+                "target": "END",
+            })
 
-    # de-dupe
+    # ----------------------------------------
+    # De-duplicate flows
+    # ----------------------------------------
     seen = set()
     deduped = []
-    for f in flows:
-        key = (f.get("source"), f.get("target"), f.get("name", ""))
+
+    for flow in flows:
+        key = (
+            flow.get("source"),
+            flow.get("target"),
+            flow.get("name", ""),
+        )
+
         if key not in seen:
-            deduped.append(f)
+            deduped.append(flow)
             seen.add(key)
 
     return {
@@ -163,7 +309,6 @@ def workflow_from_rows_rule_based(title: str, rows: list[dict[str, str]]) -> dic
         "nodes": nodes,
         "flows": deduped,
     }
-
 
 def _load_json(text: str) -> dict[str, Any]:
     text = text.strip()
