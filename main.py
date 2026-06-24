@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-
+from src.visio_postprocess import move_lane_labels_to_left
 from src.docx_extractor import extract_section6_tables
 from src.ai_workflow import workflow_from_rows_rule_based, workflow_from_rows_with_ai
 from src.bpmn_generator import generate_process_assets
@@ -26,6 +26,8 @@ def run_pipeline(docx_path: str | Path, use_ai: bool = False) -> dict:
 
     assets = generate_process_assets(workflow, output_dir)
     vsdx_path = convert_to_vsdx(assets["bpmn"], output_dir)
+
+    move_lane_labels_to_left(vsdx_path, workflow["lanes"])
 
     return {
         "workflow": workflow_path,

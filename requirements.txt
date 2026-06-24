@@ -4,3 +4,4 @@ processpiper
 lxml
 openai
 bpmn-to-visio
+python-dotenv

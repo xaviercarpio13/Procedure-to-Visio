@@ -1,4 +1,6 @@
 from __future__ import annotations
+from dotenv import load_dotenv
+
 
 import json
 import os
@@ -6,7 +8,7 @@ import re
 from typing import Any
 
 from openai import OpenAI
-
+load_dotenv()
 
 SYSTEM_PROMPT = """
 You convert Spanish procedure tables into normalized workflow JSON for BPMN generation.
