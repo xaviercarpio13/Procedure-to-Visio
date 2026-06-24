@@ -1,0 +1,160 @@
+{
+  "title": "Conciliación Bancaria",
+  "lanes": [
+    "Tesorero/a",
+    "Contador/a",
+    "Jefe Administrativo Financiero"
+  ],
+  "nodes": [
+    {
+      "id": "START",
+      "type": "start",
+      "lane": "Tesorero/a",
+      "name": "Inicio"
+    },
+    {
+      "id": "A1",
+      "type": "task",
+      "lane": "Tesorero/a",
+      "name": "1. Enviar documentación e información"
+    },
+    {
+      "id": "A2",
+      "type": "task",
+      "lane": "Contador/a",
+      "name": "2. Descargar información"
+    },
+    {
+      "id": "A3",
+      "type": "task",
+      "lane": "Contador/a",
+      "name": "3. Numerar y marcar documentos"
+    },
+    {
+      "id": "A4",
+      "type": "task",
+      "lane": "Contador/a",
+      "name": "4. Comparar información e identificar discrepancias"
+    },
+    {
+      "id": "G4_1",
+      "type": "exclusiveGateway",
+      "lane": "Contador/a",
+      "name": "¿Existen diferencias?"
+    },
+    {
+      "id": "A5",
+      "type": "task",
+      "lane": "Contador/a",
+      "name": "5. Registrar transacciones no registradas"
+    },
+    {
+      "id": "A6",
+      "type": "task",
+      "lane": "Contador/a",
+      "name": "6. Elaborar conciliación bancaria"
+    },
+    {
+      "id": "A7",
+      "type": "task",
+      "lane": "Jefe Administrativo Financiero",
+      "name": "7. Revisar y aprobar conciliación"
+    },
+    {
+      "id": "G7_1",
+      "type": "exclusiveGateway",
+      "lane": "Jefe Administrativo Financiero",
+      "name": "¿Existen observaciones?"
+    },
+    {
+      "id": "A8",
+      "type": "task",
+      "lane": "Jefe Administrativo Financiero",
+      "name": "8. Comunicar observaciones"
+    },
+    {
+      "id": "A9",
+      "type": "task",
+      "lane": "Jefe Administrativo Financiero",
+      "name": "9. Firmar conciliación bancaria"
+    },
+    {
+      "id": "A10",
+      "type": "task",
+      "lane": "Contador/a",
+      "name": "10. Realizar cierre de mes"
+    },
+    {
+      "id": "END",
+      "type": "end",
+      "lane": "Contador/a",
+      "name": "Fin"
+    }
+  ],
+  "flows": [
+    {
+      "source": "START",
+      "target": "A1"
+    },
+    {
+      "source": "A1",
+      "target": "A2"
+    },
+    {
+      "source": "A2",
+      "target": "A3"
+    },
+    {
+      "source": "A3",
+      "target": "A4"
+    },
+    {
+      "source": "A4",
+      "target": "G4_1"
+    },
+    {
+      "source": "G4_1",
+      "target": "A5",
+      "name": "Sí"
+    },
+    {
+      "source": "G4_1",
+      "target": "A6",
+      "name": "No"
+    },
+    {
+      "source": "A5",
+      "target": "A6"
+    },
+    {
+      "source": "A6",
+      "target": "A7"
+    },
+    {
+      "source": "A7",
+      "target": "G7_1"
+    },
+    {
+      "source": "G7_1",
+      "target": "A8",
+      "name": "Sí"
+    },
+    {
+      "source": "G7_1",
+      "target": "A9",
+      "name": "No"
+    },
+    {
+      "source": "A8",
+      "target": "A5"
+    },
+    {
+      "source": "A9",
+      "target": "A10"
+    },
+    {
+      "source": "A10",
+      "target": "END"
+    }
+  ]
+}

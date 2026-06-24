@@ -1,0 +1,6 @@
+streamlit
+python-docx
+processpiper
+lxml
+openai
+bpmn-to-visio
