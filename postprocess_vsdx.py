@@ -17,7 +17,7 @@ if __name__ == "__main__":
             lane_names = sys.argv[2:]
 
         fixed_path = move_lane_labels_to_left(vsdx_path, lane_names)
-        
+        print(f"FIXED_FILE={fixed_path}")
 
     except Exception:
         traceback.print_exc()

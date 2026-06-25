@@ -181,107 +181,7 @@ def _draw_rotated_lane_text(page, lane_name, strip_left, strip_right, y_bottom, 
 
     return text_box
 
-def _is_yes_no_label(text):
-    text = _norm(text).lower()
-    return text in {"si", "sí", "no"}
 
-
-def _connector_points(shape):
-    """
-    Returns begin/end points for connector-like shapes.
-    """
-    try:
-        bx = shape.CellsU("BeginX").ResultIU
-        by = shape.CellsU("BeginY").ResultIU
-        ex = shape.CellsU("EndX").ResultIU
-        ey = shape.CellsU("EndY").ResultIU
-        return bx, by, ex, ey
-    except Exception:
-        return None
-
-
-def _draw_clean_flow_label(page, label_text, x, y):
-    """
-    Draw a clean floating label with white background.
-    """
-    label_w = 0.32
-    label_h = 0.16
-
-    box = page.DrawRectangle(
-        x - label_w / 2,
-        y - label_h / 2,
-        x + label_w / 2,
-        y + label_h / 2,
-    )
-
-    box.Text = label_text
-
-    _safe_set_formula(box, "FillForegnd", "RGB(255,255,255)")
-    _safe_set_formula(box, "FillPattern", "1")
-    _safe_set_formula(box, "LinePattern", "0")
-    _safe_set_formula(box, "Char.Size", "7 pt")
-    _safe_set_formula(box, "Char.Color", "RGB(0,0,0)")
-    _safe_set_formula(box, "Para.HorzAlign", "1")
-    _safe_set_formula(box, "VerticalAlign", "1")
-
-    box.BringToFront()
-
-    return box
-
-
-def _improve_gateway_labels(page):
-    """
-    Replaces ugly connector text labels like Sí/No with floating labels.
-    """
-    improved = 0
-
-    for shape in list(_walk_shapes(page.Shapes)):
-        try:
-            text = _norm(shape.Text)
-        except Exception:
-            continue
-
-        if not _is_yes_no_label(text):
-            continue
-
-        points = _connector_points(shape)
-
-        if points is None:
-            continue
-
-        bx, by, ex, ey = points
-
-        mid_x = (bx + ex) / 2
-        mid_y = (by + ey) / 2
-
-        dx = abs(ex - bx)
-        dy = abs(ey - by)
-
-        # Clear original connector label
-        try:
-            shape.Text = ""
-        except Exception:
-            pass
-
-        # Placement rule:
-        # - horizontal connector: label above line
-        # - vertical connector: label to the right
-        # - diagonal/complex connector: small upper-right offset
-        if dx >= dy * 1.5:
-            label_x = mid_x
-            label_y = mid_y + 0.13
-        elif dy >= dx * 1.5:
-            label_x = mid_x + 0.18
-            label_y = mid_y
-        else:
-            label_x = mid_x + 0.15
-            label_y = mid_y + 0.12
-
-        _draw_clean_flow_label(page, text, label_x, label_y)
-        improved += 1
-
-    print(f"IMPROVED_GATEWAY_LABELS={improved}")
-    
 def move_lane_labels_to_left(vsdx_path, lane_names):
     original_path = Path(vsdx_path).resolve()
     fixed_path = original_path.with_name(original_path.stem + "_fixed.vsdx")
@@ -341,6 +241,8 @@ def move_lane_labels_to_left(vsdx_path, lane_names):
             created += 1
 
         doc.SaveAs(str(fixed_path))
+
+
 
         return fixed_path
 
